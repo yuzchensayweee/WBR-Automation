@@ -276,7 +276,7 @@ group by 1,2
     group by 1,2
 )
 , delivery_base_wkly_groc as (
-    select * from delivery_base_wkly_groc_nomo union all select * from delivery_base_wkly_groc_mo
+    select type, sales_region_id, sum(delivery_cost) as delivery_cost from (select * from delivery_base_wkly_groc_nomo union all select * from delivery_base_wkly_groc_mo) group by 1,2
 )
 -- calculate labor cost
 , p_and_l_labor as (
@@ -462,5 +462,6 @@ select type
     , misc_pct
     , ops_pct
     , delivery_cost
+    , case when type::date = dateadd('week', -1,date_trunc('week', current_date)-1)::date then lag(delivery_cost) over (partition by sales_region_id order by type::date ) else delivery_cost end as delivery_cost
     , case when type::date = dateadd('week', -1,date_trunc('week', current_date)-1)::date then lag(delivery_pct) over (partition by sales_region_id order by type::date ) else delivery_pct end as delivery_pct
 from tbl;
