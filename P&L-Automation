@@ -16,7 +16,7 @@ with region_base as (
         , sum(gm_cost*is_gm) as cogs
         , sum(gm_margin) as gm_margin
         , sum(gm_base) as gm_base
-        , dense_rank()over(partition by date_trunc('month', delivery_day) order by case when date_part(dayofweek, delivery_day) = 0 then delivery_day else  dateadd('day', -1, date_trunc('week', delivery_day))::date end desc) as rk
+        , dense_rank()over(partition by date_trunc('month', delivery_day) order by dateadd('day', -date_part(dow, delivery_day::date)::int, delivery_day::date)::date desc) as rk
         ,'' as place_holder
     from metrics.order_product
     where (delivery_month = dateadd('month', -1, date_trunc('month', current_date))::date
@@ -26,7 +26,7 @@ with region_base as (
 )
 -- avg net rev
 , region_rev as (
-    select  case when date_part(dayofweek, delivery_day) = 0 then delivery_day else  dateadd('day', -1, date_trunc('week', delivery_day))::date end as delivery_week
+    select  dateadd('day', -date_part(dow, delivery_day::date)::int, delivery_day::date)::date as delivery_week
         , sales_region_id_new as sales_region_id
         , sum(daily_new_users_flag) as new_user
         , sum(sub_total) as gross_rev
@@ -55,7 +55,7 @@ with region_base as (
         , sum(gm_cost*is_gm) as cogs
         , sum(gm_margin) as gm_margin
         , sum(gm_base) as gm_base
-        , dense_rank()over(partition by date_trunc('month', delivery_day) order by case when date_part(dayofweek, delivery_day) = 0 then delivery_day else  dateadd('day', -1, date_trunc('week', delivery_day))::date end desc) as rk
+        , dense_rank()over(partition by date_trunc('month', delivery_day) order by dateadd('day', -date_part(dow, delivery_day::date)::int, delivery_day::date)::date desc) as rk
     from metrics.order_product
     where (delivery_month = dateadd('month', -1, date_trunc('month', current_date))::date
     or delivery_week between date(dateadd('week', -4,date(date_trunc('week', current_date)-1))) AND date(dateadd('week', -1,date_trunc('week', current_date)-1)))
@@ -63,7 +63,7 @@ with region_base as (
     group by 1,2,3,4,5
 )
 , groc_rev as (
-    select  case when date_part(dayofweek, delivery_day) = 0 then delivery_day else  dateadd('day', -1, date_trunc('week', delivery_day))::date end as delivery_week
+    select  dateadd('day', -date_part(dow, delivery_day::date)::int, delivery_day::date)::date as delivery_week
         , sales_region_id
         , sum(daily_new_users_flag) as new_user
         , sum(sub_total) as gross_rev
@@ -133,7 +133,7 @@ group by 1,2,3
 -- weekly sales base
 , sales_base_wkly_region as (
 SELECT
-  case when date_part(dayofweek, delivery_day) = 0 then delivery_day else  dateadd('day', -1, date_trunc('week', delivery_day))::date end as type,
+  dateadd('day', -date_part(dow, delivery_day::date)::int, delivery_day::date)::date::varchar as type,
   sales_region_id_new as sales_region_id,
   sales_region_title_new as sales_region_title,
   0.023 AS weeebates_pct,
@@ -178,10 +178,10 @@ SELECT
   '' as placeholder
 from region_base pl
 left join (select * from region_pl where region_id != 999) rpl on pl.sales_region_id_new = rpl.region_id
-where case when date_part(dayofweek, delivery_day) = 0 then delivery_day else  dateadd('day', -1, date_trunc('week', delivery_day))::date end between date(dateadd('week', -4,date(date_trunc('week', current_date)-1))) AND date(dateadd('week', -1,date_trunc('week', current_date)-1))
+where dateadd('day', -date_part(dow, delivery_day::date)::int, delivery_day::date)::date between date(dateadd('week', -4,date(date_trunc('week', current_date)-1))) AND date(dateadd('week', -1,date_trunc('week', current_date)-1))
 group by 1,2,3,4
 )
-, delivery_base_wkly_region as (
+, delivery_base_wkly_region_nomo as (
 select  delivery_week::varchar AS type,
         sales_region_id,
         sum(total_delivery_cost)+sum(weee_linehaul_cost) AS delivery_cost
@@ -190,9 +190,28 @@ where   delivery_week between date(dateadd('week', -4,date(date_trunc('week', cu
 and     delivery_plan_type = 'grocery'
 group by 1,2
 )
+, delivery_base_wkly_region_mo as (
+select  delivery_week::varchar AS type,
+        3 as sales_region_id,
+        sum(total_delivery_cost) as delivery_cost
+        from (
+            select dateadd('day', -date_part(dow, deal_delivery_date::date)::int, deal_delivery_date::date)::date as delivery_week
+            , wms_order_id
+            , max(rate) as total_delivery_cost
+            from metrics.mail_order_shipment
+            where delivery_week
+            between date(dateadd('week', -4,date(date_trunc('week', current_date)-1)))
+            and date(dateadd('week', -1,date_trunc('week', current_date)-1))
+            group by 1,2
+        ) mo
+group by 1,2
+)
+, delivery_base_wkly_region as (
+    select * from delivery_base_wkly_region_nomo union all select * from delivery_base_wkly_region_mo
+)
 , sales_base_wkly_groc as (
 SELECT
-  case when date_part(dayofweek, delivery_day) = 0 then delivery_day else  dateadd('day', -1, date_trunc('week', delivery_day))::date end as  type,
+  dateadd('day', -date_part(dow, delivery_day::date)::int, delivery_day::date)::date::varchar as type,
   sales_region_id,
   'Company Total' as sales_region_title,
   0.023 AS weeebates_pct,
@@ -237,10 +256,10 @@ SELECT
   '' as placeholder
 from groc_base pl
 left join (select * from region_pl where region_id = 999) rpl on pl.sales_region_id = rpl.region_id
-where case when date_part(dayofweek, delivery_day) = 0 then delivery_day else  dateadd('day', -1, date_trunc('week', delivery_day))::date end between date(dateadd('week', -4,date(date_trunc('week', current_date)-1))) AND date(dateadd('week', -1,date_trunc('week', current_date)-1))
+where dateadd('day', -date_part(dow, delivery_day::date)::int, delivery_day::date)::date between date(dateadd('week', -4,date(date_trunc('week', current_date)-1))) AND date(dateadd('week', -1,date_trunc('week', current_date)-1))
 group by 1,2,3,4
 )
-,delivery_base_wkly_groc as (
+,delivery_base_wkly_groc_nomo as (
 select  delivery_week::varchar AS type,
         999 as sales_region_id,
         SUM(total_delivery_cost)+SUM(weee_linehaul_cost) AS delivery_cost
@@ -248,6 +267,16 @@ from    metrics.dispatch_performance dp
 where   delivery_week between date(dateadd('week', -4,date(date_trunc('week', current_date)-1))) AND date(dateadd('week', -1,date_trunc('week', current_date)-1))
 and     delivery_plan_type = 'grocery'
 group by 1,2
+)
+, delivery_base_wkly_groc_mo as (
+    select type,
+           999 as sales_region_id,
+           sum(delivery_cost) as delivery_cost
+    from delivery_base_wkly_region_mo
+    group by 1,2
+)
+, delivery_base_wkly_groc as (
+    select * from delivery_base_wkly_groc_nomo union all select * from delivery_base_wkly_groc_mo
 )
 -- calculate labor cost
 , p_and_l_labor as (
@@ -328,9 +357,13 @@ group by 1,2
         , case when adp.sales_region_id = 2 then total_dry_labor_cost * la.dry_rev_pct else mo_outbound end as mo_outbound
         , case when adp.sales_region_id = 2 then total_dry_labor_cost * la1.dry_rev_pct else 0 end as dry_labor_cost --> la mirada to ba dry labor (should minus from la mirada
         , case when adp.sales_region_id = 2 then total_nodry_labor_cost * la1.non_dry_rev_pct else 0 end as nodry_labor_cost --> start from 10/15
+        , case when adp.sales_region_id in (15,7) then adp.total_labor_cost * pll.inbound_pct::float * cn.mo_pct  else 0 end as mo_labor
     from adp_tbl  adp
     left join la on adp.entry_date = la.delivery_day and la.sales_region_id = 3
     left join la la1 on adp.entry_date = la1.delivery_day and la1.sales_region_id = 1
+    left join p_and_l_labor pll on case when date_part(dayofweek, adp.entry_date) = 0 then adp.entry_date else  dateadd('day', -1, date_trunc('week', adp.entry_date))::date end = pll.delivery_week::date
+               and pll.sales_region_id = adp.sales_region_id
+    left join chi_nj cn on cn.delivery_day = adp.entry_date and cn.sales_region_id = adp.sales_region_id
 )
 , labor_cost as (
     select t1.entry_date
@@ -339,7 +372,7 @@ group by 1,2
                when t1.sales_region_id = 2 then
                     case when t1.entry_date < '2022-10-15' then t1.total_dry_labor_cost - t1.mo_outbound - t1.dry_labor_cost + t1.total_nodry_labor_cost
                     when t1.entry_date >= '2022-10-15' then t1.total_dry_labor_cost - t1.mo_outbound - t2.dry_labor_cost + t1.total_nodry_labor_cost - t2.nodry_labor_cost end
-               when t1.sales_region_id in (15,7) then t1.total_labor_cost - t1.mo_outbound
+               when t1.sales_region_id in (15,7) then t1.total_labor_cost - t1.mo_outbound - t1.mo_labor
                when t1.sales_region_id = 1 then
                     case when t1.entry_date < '2022-10-15' then t1.total_labor_cost + t2.dry_labor_cost
                          when t1.entry_date >='2022-10-15' then t1.total_labor_cost + t2.dry_labor_cost + t2.nodry_labor_cost end end as final_labor_cost
@@ -347,16 +380,16 @@ group by 1,2
     left join labor_base t2 on t1.entry_date = t2.entry_date and t2.sales_region_id = 2
 )
 , adp_labor_nomo as (
-    select case when date_part(dayofweek, entry_date) = 0 then entry_date else  dateadd('day', -1, date_trunc('week', entry_date))::date end as entry_week
+    select dateadd('day', -date_part(dow, entry_date::date)::int, entry_date::date)::date as entry_week
         , sales_region_id
         , sum(final_labor_cost) as final_labor_cost
     from labor_cost
     group by 1,2
 )
 , adp_labor_mo as (
-    select case when date_part(dayofweek, entry_date) = 0 then entry_date else  dateadd('day', -1, date_trunc('week', entry_date))::date end as entry_week
+    select dateadd('day', -date_part(dow, entry_date::date)::int, entry_date::date)::date as entry_week
         , 3 as sales_region_id
-        , sum(mo_outbound) as final_labor_cost
+        , sum(mo_outbound)+sum(mo_labor) as final_labor_cost
     from labor_base
     group by 1,2
 )
@@ -364,7 +397,7 @@ group by 1,2
     select * from adp_labor_nomo union all select * from adp_labor_mo
 )
 , adp_wkly_groc as (
-    select case when date_part(dayofweek, entry_date) = 0 then entry_date else  dateadd('day', -1, date_trunc('week', entry_date))::date end as entry_week
+    select dateadd('day', -date_part(dow, entry_date::date)::int, entry_date::date)::date as entry_week
         , 999 as sales_region_id
         , sum(total_labor_cost) as final_labor_cost
     from adp_tbl group by 1,2
@@ -373,6 +406,7 @@ group by 1,2
   select  sb.*,
           db.delivery_cost*1.01 as delivery_cost,
           db.delivery_cost*1.01/sb.net_rev as delivery_pct,
+          adp.final_labor_cost,
           adp.final_labor_cost/sb.net_rev as labor_cost_pct,
           '' as placeholder
   from    sales_base_wkly_region sb
@@ -384,6 +418,7 @@ group by 1,2
   select  sb.*,
           db.delivery_cost*1.01 as delivery_cost,
           db.delivery_cost*1.01/sb.net_rev as delivery_pct,
+          adp.final_labor_cost,
           adp.final_labor_cost/sb.net_rev as labor_cost_pct,
           '' as placeholder
   from    sales_base_wkly_groc sb
@@ -418,6 +453,7 @@ select type
     , cogs_pct
     , inbound_pct
     , gm_pct
+    , case when type::date = dateadd('week', -1, date_trunc('week', current_date)-1)::date then lag(final_labor_cost) over (partition by sales_region_id  order by type::date ) else final_labor_cost end as final_labor_cost
     , case when type::date  = dateadd('week', -1,date_trunc('week', current_date)-1)::date then lag(labor_cost_pct) over (partition by sales_region_id order by type::date ) else labor_cost_pct end as labor_cost_pct
     , packaging_pct
     , processing_fee_pct
