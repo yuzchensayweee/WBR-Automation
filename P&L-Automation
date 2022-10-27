@@ -16,7 +16,9 @@ with region_base as (
         , sum(gm_cost*is_gm) as cogs
         , sum(gm_margin) as gm_margin
         , sum(gm_base) as gm_base
-        , dense_rank()over(partition by date_trunc('month', delivery_day) order by dateadd('day', -date_part(dow, delivery_day::date)::int, delivery_day::date)::date desc) as rk
+        , dense_rank()
+        over
+        (partition by date_trunc('month', dateadd('day', -date_part(dow, delivery_day::date)::int, delivery_day::date)::date) order by dateadd('day', -date_part(dow, delivery_day::date)::int, delivery_day::date)::date desc) as rk
         ,'' as place_holder
     from metrics.order_product
     where (delivery_month = dateadd('month', -1, date_trunc('month', current_date))::date
@@ -55,7 +57,9 @@ with region_base as (
         , sum(gm_cost*is_gm) as cogs
         , sum(gm_margin) as gm_margin
         , sum(gm_base) as gm_base
-        , dense_rank()over(partition by date_trunc('month', delivery_day) order by dateadd('day', -date_part(dow, delivery_day::date)::int, delivery_day::date)::date desc) as rk
+        , dense_rank()
+        over
+        (partition by date_trunc('month', dateadd('day', -date_part(dow, delivery_day::date)::int, delivery_day::date)::date) order by dateadd('day', -date_part(dow, delivery_day::date)::int, delivery_day::date)::date desc) as rk
     from metrics.order_product
     where (delivery_month = dateadd('month', -1, date_trunc('month', current_date))::date
     or delivery_week between date(dateadd('week', -4,date(date_trunc('week', current_date)-1))) AND date(dateadd('week', -1,date_trunc('week', current_date)-1)))
@@ -116,7 +120,7 @@ FROM region_pl_base)
   , avg(pl.ops * coalesce(gr.net_rev, rr.net_rev)) as avg_ops_dollar_value
   , max(pl.misc) as misc_pct
   , avg(pl2.misc) as misc_pct_avg
-  , avg(pl.misc * coalesce(gr.net_rev, rr.net_rev)) as avg_misc_dollar_value
+--   , avg(pl.misc * coalesce(gr.net_rev, rr.net_rev)) as avg_misc_dollar_value
 from region_pl_tbl pl
 left join (select delivery_month, sales_region_id, sum(sub_total) as gross_rev_region from metrics.order_product where order_biz_type = 'grocery' group by 1,2) op
   on pl.report_month = op.delivery_month and pl.region_id = sales_region_id
@@ -144,33 +148,36 @@ SELECT
   round(gross_rev/active_user, 2) as arpu,
   round(gross_rev/delivery_cnt, 2) as rev_per_delivery,
   sum(coupon) as total_coupon_rev,
-  sum(new_user_coupon) as new_user_coupon_rev,
+--   sum(new_user_coupon) as new_user_coupon_rev,
   -- total_coupon_rev - new_user_coupon_rev as coupon_rev,
   total_coupon_rev - 10*new_user as coupon_rev,
-  (total_coupon_rev - new_user_coupon_rev)/gross_rev as coupon_pct,
+  coupon_rev/gross_rev as coupon_pct,
   -- max(weeebates_pct) as weee_bates_pct,
   -- coupon_pct+max(weeebates_pct) as discount_pct,
   coupon_pct+0.023 AS discount_pct,
   sum(oos) as oos_rev,
   oos_rev/gross_rev as oos_pct,
 --   sum(refund) as refund_rev,
-  case when type::date = dateadd('week', -1,date_trunc('week',current_date)-1) then max(rv.return_rev) else sum(refund) end as refund_rev,
+  case when type::date = dateadd('week', -1,date_trunc('week',current_date)-1) then oos_rev/0.88 else sum(refund) end as refund_rev,
   refund_rev/gross_rev as refund_pct,
   oos_pct+refund_pct as oos_refund_pct,
   -- gross_rev - oos_rev - refund_rev - coupon_rev - gross_rev * max(weeebates_pct) as net_rev,
   gross_rev - oos_rev - refund_rev - coupon_rev - gross_rev * 0.023 as net_rev,
   net_rev/gross_rev as net_rev_pct,
+  sum(cogs) as cogs_rev,
   sum(cogs)/gross_rev as cogs_pct,
   max(inbound_pct) as inbound_pct,
   (net_rev_pct-cogs_pct-max(inbound_pct)*net_rev_pct)/net_rev_pct as gm_pct,
-  max(wh_labor_pct) as wh_labor_pct,
- case when max(date_trunc('month', type::date)) = date_trunc('month', current_date) then max(packaging_pct_avg) else max(packaging_pct) end as packaging_pct,
+  case when max(date_trunc('month', type::date)) = date_trunc('month', current_date) then max(packaging_pct_avg) else max(packaging_pct) end as packaging_pct,
   max(processing_fee_pct) as processing_fee_pct,
   max(cs_pct) as cs_pct,
+  case when max(date_trunc('month',type::date)) = date_trunc('month',current_date) then  max(avg_wh_dollar_value) else max(wh_pct) end as wh_dollar,
   case when max(date_trunc('month',type::date)) = date_trunc('month',current_date) then  max(avg_wh_dollar_value)/net_rev
       else max(wh_pct) end as wh_pct,
-  case when max(date_trunc('month',type::date)) = date_trunc('month',current_date) then  max(avg_misc_dollar_value)/net_rev
+--   case when max(date_trunc('month',type::date)) = date_trunc('month',current_date) then  max(avg_misc_dollar_value) else max(misc_pct) end as misc_dollar,
+  case when max(date_trunc('month',type::date)) = date_trunc('month',current_date) then  max(misc_pct_avg)
       else max(misc_pct) end as misc_pct,
+  case when max(date_trunc('month',type::date)) = date_trunc('month',current_date) then  max(avg_ops_dollar_value) else max(ops_pct) end as ops_dollar,
   case when max(date_trunc('month',type::date)) = date_trunc('month',current_date) then  max(avg_ops_dollar_value)/net_rev
       else max(ops_pct) end as ops_pct,
   -- max(wh_pct) as wh_pct,
@@ -179,7 +186,6 @@ SELECT
   '' as placeholder
 from region_base pl
 left join (select * from region_pl where region_id != 999) rpl on pl.sales_region_id_new = rpl.region_id
-left join (select sales_region_id, return_rev from region_rev where date_trunc('month', delivery_week) = date_trunc('month', current_date) and rk = 2) rv on pl.sales_region_id_new = rv.sales_region_id
 where dateadd('day', -date_part(dow, delivery_day::date)::int, delivery_day::date)::date between date(dateadd('week', -4,date(date_trunc('week', current_date)-1))) AND date(dateadd('week', -1,date_trunc('week', current_date)-1))
 group by 1,2,3,4
 )
@@ -224,33 +230,36 @@ SELECT
   round(gross_rev/active_user, 2) as arpu,
   round(gross_rev/delivery_cnt, 2) as rev_per_delivery,
   sum(coupon) as total_coupon_rev,
-  sum(new_user_coupon) as new_user_coupon_rev,
+--   sum(new_user_coupon) as new_user_coupon_rev,
   -- total_coupon_rev - new_user_coupon_rev as coupon_rev,
   total_coupon_rev - 10*new_user as coupon_rev,
-  (total_coupon_rev - new_user_coupon_rev)/gross_rev as coupon_pct,
+   coupon_rev/gross_rev as coupon_pct,
   -- max(weeebates_pct) as weee_bates_pct,
   -- coupon_pct+max(weeebates_pct) as discount_pct,
   coupon_pct+0.023 AS discount_pct,
   sum(oos) as oos_rev,
   oos_rev/gross_rev as oos_pct,
 --   sum(refund) as refund_rev,
-  case when type::date = dateadd('week', -1,date_trunc('week',current_date)-1) then max(gr.return_rev) else sum(refund) end as refund_rev,
+  case when type::date = dateadd('week', -1,date_trunc('week',current_date)-1) then oos_rev/0.88 else sum(refund) end as refund_rev,
   refund_rev/gross_rev as refund_pct,
   oos_pct+refund_pct as oos_refund_pct,
   -- gross_rev - oos_rev - refund_rev - coupon_rev - gross_rev * max(weeebates_pct) as net_rev,
   gross_rev - oos_rev - refund_rev - coupon_rev - gross_rev * 0.023 as net_rev,
   net_rev/gross_rev as net_rev_pct,
+  sum(cogs) as cogs_rev,
   sum(cogs)/gross_rev as cogs_pct,
   max(inbound_pct) as inbound_pct,
   (net_rev_pct-cogs_pct-max(inbound_pct)*net_rev_pct)/net_rev_pct as gm_pct,
-  max(wh_labor_pct) as wh_labor_pct,
- case when max(date_trunc('month', type::date)) = date_trunc('month', current_date) then max(packaging_pct_avg) else max(packaging_pct) end as packaging_pct,
+  case when max(date_trunc('month', type::date)) = date_trunc('month', current_date) then max(packaging_pct_avg) else max(packaging_pct) end as packaging_pct,
   max(processing_fee_pct) as processing_fee_pct,
   max(cs_pct) as cs_pct,
+  case when max(date_trunc('month',type::date)) = date_trunc('month',current_date) then  max(avg_wh_dollar_value) else max(wh_pct) end as wh_dollar,
   case when max(date_trunc('month',type::date)) = date_trunc('month',current_date) then  max(avg_wh_dollar_value)/net_rev
       else max(wh_pct) end as wh_pct,
-  case when max(date_trunc('month',type::date)) = date_trunc('month',current_date) then  max(avg_misc_dollar_value)/net_rev
+--   case when max(date_trunc('month',type::date)) = date_trunc('month',current_date) then  max(avg_misc_dollar_value) else max(misc_pct) end as misc_dollar,
+  case when max(date_trunc('month',type::date)) = date_trunc('month',current_date) then  max(misc_pct_avg)
       else max(misc_pct) end as misc_pct,
+  case when max(date_trunc('month',type::date)) = date_trunc('month',current_date) then  max(avg_ops_dollar_value) else max(ops_pct) end as ops_dollar,
   case when max(date_trunc('month',type::date)) = date_trunc('month',current_date) then  max(avg_ops_dollar_value)/net_rev
       else max(ops_pct) end as ops_pct,
   -- max(wh_pct) as wh_pct,
@@ -259,7 +268,6 @@ SELECT
   '' as placeholder
 from groc_base pl
 left join (select * from region_pl where region_id = 999) rpl on pl.sales_region_id = rpl.region_id
-left join (select sales_region_id, return_rev from groc_rev where date_trunc('month', delivery_week) = date_trunc('month', current_date) and rk = 2) gr on pl.sales_region_id = gr.sales_region_id
 where dateadd('day', -date_part(dow, delivery_day::date)::int, delivery_day::date)::date between date(dateadd('week', -4,date(date_trunc('week', current_date)-1))) AND date(dateadd('week', -1,date_trunc('week', current_date)-1))
 group by 1,2,3,4
 )
@@ -444,7 +452,6 @@ select type
     , arpu
     , rev_per_delivery
     , total_coupon_rev
-    , new_user_coupon_rev
     , coupon_rev
     , coupon_pct
     , discount_pct
@@ -455,6 +462,7 @@ select type
     , oos_refund_pct
     , net_rev
     , net_rev_pct
+    , cogs_rev
     , cogs_pct
     , inbound_pct
     , gm_pct
@@ -463,11 +471,15 @@ select type
     , packaging_pct
     , processing_fee_pct
     , 0.001 as cs_pct
+    , wh_dollar
     , wh_pct
     , misc_pct
+    , ops_dollar
     , ops_pct
-    , delivery_cost
     , case when type::date = dateadd('week', -1,date_trunc('week', current_date)-1)::date then lag(delivery_cost) over (partition by sales_region_id order by type::date ) else delivery_cost end as delivery_cost
     , case when type::date = dateadd('week', -1,date_trunc('week', current_date)-1)::date then lag(delivery_pct) over (partition by sales_region_id order by type::date ) else delivery_pct end as delivery_pct
 from tbl
 order by 2,type::date;
+
+
+
