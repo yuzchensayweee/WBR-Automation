@@ -29,7 +29,7 @@ with region_base as (
 -- avg net rev
 , region_rev as (
     select  dateadd('day', -date_part(dow, delivery_day::date)::int, delivery_day::date)::date as delivery_week
-        , rk 
+        , rk
         , sales_region_id_new as sales_region_id
         , sum(daily_new_users_flag) as new_user
         , sum(sub_total) as gross_rev
@@ -37,7 +37,7 @@ with region_base as (
         , sum(coupon) as coupon_rev
         , sum(coupon) - sum(new_user_coupon) as discount
         , gross_rev - oos_rev - (coupon_rev-10*new_user) - gross_rev*0.023 as net_rev
-        , sum(refund) as return_rev 
+        , sum(refund) as return_rev
     from region_base
     group by 1,2,3
 )
@@ -69,14 +69,14 @@ with region_base as (
 , groc_rev as (
     select  dateadd('day', -date_part(dow, delivery_day::date)::int, delivery_day::date)::date as delivery_week
         , sales_region_id
-        , rk 
+        , rk
         , sum(daily_new_users_flag) as new_user
         , sum(sub_total) as gross_rev
         , sum(oos)+sum(refund) as oos_rev
         , sum(coupon) as coupon_rev
         , sum(coupon) - sum(new_user_coupon) as discount
         , gross_rev - oos_rev - (coupon_rev-10*new_user) - gross_rev*0.023 as net_rev
-        , sum(refund) as return_rev 
+        , sum(refund) as return_rev
     from groc_base
     group by 1,2,3
 )
@@ -311,7 +311,7 @@ group by 1,2
     , case when sales_region_id = 2 then total_labor_cost - total_dry_labor_cost else 0 end as total_nodry_labor_cost
     from metrics.adp_labor_cost_detail
     where entry_week between date(dateadd('week', -4, date(date_trunc('week', current_date)-1))) and date(dateadd('week', -1, date_trunc('week', current_date)-1))
-    and department_description not like '%OP - DC%' and warehouse != 'check' and warehouse != 'LA - Greater'
+     and warehouse != 'check' and warehouse != 'LA - Greater'
     and filter_flag = 'N'
     group by 1,2
 )
@@ -439,9 +439,226 @@ group by 1,2
   on      sb.sales_region_id = db.sales_region_id AND sb.type = db.type
   left join adp_wkly_groc  adp on adp.sales_region_id = sb.sales_region_id and sb.type = adp.entry_week::varchar
 )
+, sales_base_mthly_region as (
+SELECT
+  'Reported '+date_trunc('month',dateadd('day', -date_part(dow, delivery_day::date)::int, delivery_day::date))::date::varchar as type,
+  sales_region_id_new as sales_region_id,
+  sales_region_title_new as sales_region_title,
+  0.023 AS weeebates_pct,
+  sum(daily_new_users_flag) as new_user,
+  count(distinct buyer_id) as active_user,
+  sum(sub_total) as gross_rev,
+  count(distinct group_invoice_id) as delivery_cnt,
+  round(gross_rev/active_user, 2) as arpu,
+  round(gross_rev/delivery_cnt, 2) as rev_per_delivery,
+  sum(coupon) as total_coupon_rev,
+--   sum(new_user_coupon) as new_user_coupon_rev,
+  -- total_coupon_rev - new_user_coupon_rev as coupon_rev,
+  total_coupon_rev - 10*new_user as coupon_rev,
+  coupon_rev/gross_rev as coupon_pct,
+  coupon_pct+0.023 AS discount_pct,
+  sum(oos) as oos_rev,
+  oos_rev/gross_rev as oos_pct,
+  sum(refund) as refund_rev,
+  refund_rev/gross_rev as refund_pct,
+  oos_pct+refund_pct as oos_refund_pct,
+  gross_rev - oos_rev - refund_rev - coupon_rev - gross_rev * 0.023 as net_rev,
+  net_rev/gross_rev as net_rev_pct,
+  sum(cogs) as cogs_rev,
+  sum(cogs)/gross_rev as cogs_pct,
+  max(inbound_pct) as inbound_pct,
+  (net_rev_pct-cogs_pct-max(inbound_pct)*net_rev_pct)/net_rev_pct as gm_pct,
+  max(packaging_pct) as packaging_pct,
+  max(processing_fee_pct) as processing_fee_pct,
+  max(cs_pct) as cs_pct,
+  max(wh_pct) as wh_pct,
+  max(misc_pct) as misc_pct,
+  max(ops_pct) as ops_pct,
+  max(wh_labor_pct) as wh_labor_pct,
+  '' as placeholder
+from region_base pl
+left join (select * from region_pl where region_id != 999) rpl on pl.sales_region_id_new = rpl.region_id
+where date_trunc('month',dateadd('day', -date_part(dow, delivery_day::date)::int, delivery_day::date))::date = dateadd('month', -1, date_trunc('month', current_date))::date
+group by 1,2,3,4
+)
+, delivery_base_mthly_region_nomo as (
+select  'Reported '+date_trunc('month',delivery_week)::date::varchar AS type,
+        sales_region_id,
+        sum(total_delivery_cost)+sum(weee_linehaul_cost) AS delivery_cost
+from    metrics.dispatch_performance dp
+where   date_trunc('month',delivery_week)::date = dateadd('month', -1,date_trunc('month', current_date))
+and     delivery_plan_type = 'grocery'
+group by 1,2
+)
+, delivery_base_mthly_region_mo as (
+select  'Reported '+delivery_month::varchar AS type,
+        3 as sales_region_id,
+        sum(total_delivery_cost) as delivery_cost
+        from (
+            select date_trunc('month',dateadd('day', -date_part(dow, deal_delivery_date::date)::int, deal_delivery_date::date)::date)::date as delivery_month
+            , wms_order_id
+            , max(rate) as total_delivery_cost
+            from metrics.mail_order_shipment
+            where delivery_month = dateadd('month', -1,date_trunc('month', current_date))::date
+            group by 1,2
+        ) mo
+group by 1,2
+)
+, delivery_base_mthly_region as (
+    select * from delivery_base_mthly_region_nomo union all select * from delivery_base_mthly_region_mo
+)
+, sales_base_mthly_groc as (
+SELECT
+  'Reported '+date_trunc('month',dateadd('day', -date_part(dow, delivery_day::date)::int, delivery_day::date))::date::varchar as type,
+  sales_region_id,
+  'Company Total' as sales_region_title,
+  0.023 AS weeebates_pct,
+  sum(daily_new_users_flag) as new_user,
+  count(distinct buyer_id) as active_user,
+  sum(sub_total) as gross_rev,
+  count(distinct group_invoice_id) as delivery_cnt,
+  round(gross_rev/active_user, 2) as arpu,
+  round(gross_rev/delivery_cnt, 2) as rev_per_delivery,
+  sum(coupon) as total_coupon_rev,
+  total_coupon_rev - 10*new_user as coupon_rev,
+  coupon_rev/gross_rev as coupon_pct,
+  coupon_pct+0.023 AS discount_pct,
+  sum(oos) as oos_rev,
+  oos_rev/gross_rev as oos_pct,
+  sum(refund) as refund_rev,
+  refund_rev/gross_rev as refund_pct,
+  oos_pct+refund_pct as oos_refund_pct,
+  gross_rev - oos_rev - refund_rev - coupon_rev - gross_rev * 0.023 as net_rev,
+  net_rev/gross_rev as net_rev_pct,
+  sum(cogs) as cogs_rev,
+  sum(cogs)/gross_rev as cogs_pct,
+  max(inbound_pct) as inbound_pct,
+  (net_rev_pct-cogs_pct-max(inbound_pct)*net_rev_pct)/net_rev_pct as gm_pct,
+  max(packaging_pct) as packaging_pct,
+  max(processing_fee_pct) as processing_fee_pct,
+  max(cs_pct) as cs_pct,
+  max(wh_pct) as wh_pct,
+  max(misc_pct) as misc_pct,
+  max(ops_pct) as ops_pct,
+  max(wh_labor_pct) as wh_labor_pct,
+  '' as placeholder
+from groc_base pl
+left join (select * from region_pl where region_id = 999) rpl on pl.sales_region_id = rpl.region_id
+where date_trunc('month',dateadd('day', -date_part(dow, delivery_day::date)::int, delivery_day::date))::date = dateadd('month', -1, date_trunc('month', current_date))::date
+group by 1,2,3,4
+)
+, delivery_base_mthly_groc_nomo as (
+select  'Reported '+date_trunc('month',delivery_week)::date::varchar AS type,
+        999 as sales_region_id,
+        sum(total_delivery_cost)+sum(weee_linehaul_cost) AS delivery_cost
+from    metrics.dispatch_performance dp
+where   date_trunc('month',delivery_week)::date = dateadd('month', -1,date_trunc('month', current_date))
+and     delivery_plan_type = 'grocery'
+group by 1,2
+)
+, delivery_base_mthly_groc_mo as (
+select  'Reported '+delivery_month::varchar AS type,
+        999 as sales_region_id,
+        sum(total_delivery_cost) as delivery_cost
+        from (
+            select date_trunc('month',dateadd('day', -date_part(dow, deal_delivery_date::date)::int, deal_delivery_date::date)::date)::date as delivery_month
+            , wms_order_id
+            , max(rate) as total_delivery_cost
+            from metrics.mail_order_shipment
+            where delivery_month = dateadd('month', -1,date_trunc('month', current_date))::date
+            group by 1,2
+        ) mo
+group by 1,2
+)
+, delivery_base_mthly_groc as (
+    select * from delivery_base_mthly_groc_nomo union all select * from delivery_base_mthly_groc_mo
+)
+, pl_mthly_region as (
+    select sb.type
+        , sb.sales_region_id
+        , sb.sales_region_title
+        , sb.weeebates_pct
+        , sb.new_user
+        , sb.active_user
+        , sb.gross_rev
+        , sb.delivery_cnt
+        , sb.arpu
+        , sb.rev_per_delivery
+        , sb.total_coupon_rev
+        , sb.coupon_rev
+        , sb.coupon_pct
+        , sb.discount_pct
+        , sb.oos_rev
+        , sb.oos_pct
+        , sb.refund_rev
+        , sb.refund_pct
+        , sb.oos_refund_pct
+        , sb.net_rev
+        , sb.net_rev_pct
+        , sb.cogs_rev
+        , sb.cogs_pct
+        , sb.inbound_pct
+        , sb.gm_pct
+        , 0 as final_labor_cost
+        , sb.wh_labor_pct as  labor_cost_pct
+        , packaging_pct
+        , processing_fee_pct
+        , 0.001 as cs_pct
+        , 0 as wh_dollar
+        , wh_pct
+        , misc_pct
+        ,  0 as ops_dollar
+        , ops_pct
+        , db.delivery_cost*1.01 as delivery_cost
+        , db.delivery_cost*1.01 / sb.net_rev as delivery_pct
+    from sales_base_mthly_region sb
+    left join delivery_base_mthly_region db on sb.type = db.type and sb.sales_region_id = db.sales_region_id
+)
+, pl_mthly_groc as (
+    select sb.type
+        , sb.sales_region_id
+        , sb.sales_region_title
+        , sb.weeebates_pct
+        , sb.new_user
+        , sb.active_user
+        , sb.gross_rev
+        , sb.delivery_cnt
+        , sb.arpu
+        , sb.rev_per_delivery
+        , sb.total_coupon_rev
+        , sb.coupon_rev
+        , sb.coupon_pct
+        , sb.discount_pct
+        , sb.oos_rev
+        , sb.oos_pct
+        , sb.refund_rev
+        , sb.refund_pct
+        , sb.oos_refund_pct
+        , sb.net_rev
+        , sb.net_rev_pct
+        , sb.cogs_rev
+        , sb.cogs_pct
+        , sb.inbound_pct
+        , sb.gm_pct
+        , 0 as final_labor_cost
+        , sb.wh_labor_pct as  labor_cost_pct
+        , packaging_pct
+        , processing_fee_pct
+        , 0.001 as cs_pct
+        , 0 as wh_dollar
+        , wh_pct
+        , misc_pct
+        ,  0 as ops_dollar
+        , ops_pct
+        , db.delivery_cost*1.01 as delivery_cost
+        , db.delivery_cost*1.01 / sb.net_rev as delivery_pct
+    from sales_base_mthly_groc sb
+    left join delivery_base_mthly_groc db on sb.type = db.type and sb.sales_region_id = db.sales_region_id
+)
 , tbl as
 (select * from pl_wkly_region union all select * from pl_wkly_groc)
-select type
+, t1 as
+(select type
     , sales_region_id
     , sales_region_title
     , weeebates_pct
@@ -479,7 +696,9 @@ select type
     , case when type::date = dateadd('week', -1,date_trunc('week', current_date)-1)::date then lag(delivery_cost) over (partition by sales_region_id order by type::date ) else delivery_cost end as delivery_cost
     , case when type::date = dateadd('week', -1,date_trunc('week', current_date)-1)::date then lag(delivery_pct) over (partition by sales_region_id order by type::date ) else delivery_pct end as delivery_pct
 from tbl
-order by 2,type::date;
-
+order by 2,type::date)
+select * from t1
+union all select * from pl_mthly_region
+union all select * from pl_mthly_groc;
 
 
