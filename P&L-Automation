@@ -110,7 +110,7 @@ FROM region_pl_base)
   , max(pl.wh_labor) as wh_labor_pct
   , max(pl.packaging) as packaging_pct
   , avg(pl.packaging * coalesce(gr.net_rev, rr.net_rev)) as avg_packaging_dollar_value
-  , avg(pl2.packaging) as packaging_pct_avg
+  , avg(pl3.packaging) as packaging_pct_avg
   , max(pl.payment) as processing_fee_pct
   , max(pl.css) as cs_pct
   , avg(pl.css * coalesce(gr.net_rev, rr.net_rev)) as avg_cs_dollar_value
@@ -128,7 +128,8 @@ left join (select delivery_month, 999 as sales_region_id, sum(sub_total) as gros
   on pl.report_month = op1.delivery_month and pl.report_month = op1.delivery_month
 left join (select * from region_rev where date_trunc('month',delivery_week) = dateadd('month',-1,date_trunc('month', current_date)) and rk <= 4 ) rr on pl.region_id = rr.sales_region_id
 left join (select * from groc_rev where date_trunc('month',delivery_week) = dateadd('month',-1,date_trunc('month', current_date))and rk <= 4) gr on pl.region_id  = gr.sales_region_id
-left join (select report_month, region_id, packaging, misc from region_pl_tbl where rn <= 2 ) pl2 ON pl.region_id = pl2.region_id
+left join (select report_month, region_id, misc from region_pl_tbl where rn <= 2 ) pl2 ON pl.region_id = pl2.region_id
+left join (select report_month, region_id, packaging from region_pl_tbl where rn <= 3 ) pl3 ON pl.region_id = pl3.region_id
 where rn = 1
 group by 1,2,3
 )
@@ -441,7 +442,7 @@ group by 1,2
 )
 , sales_base_mthly_region as (
 SELECT
-  'Reported '+date_trunc('month',dateadd('day', -date_part(dow, delivery_day::date)::int, delivery_day::date))::date::varchar as type,
+  'Reported '+date_trunc('month',delivery_day)::date::varchar as type,
   sales_region_id_new as sales_region_id,
   sales_region_title_new as sales_region_title,
   0.023 AS weeebates_pct,
@@ -478,15 +479,15 @@ SELECT
   '' as placeholder
 from region_base pl
 left join (select * from region_pl where region_id != 999) rpl on pl.sales_region_id_new = rpl.region_id
-where date_trunc('month',dateadd('day', -date_part(dow, delivery_day::date)::int, delivery_day::date))::date = dateadd('month', -1, date_trunc('month', current_date))::date
+where date_trunc('month',delivery_day)::date = dateadd('month', -1, date_trunc('month', current_date))::date
 group by 1,2,3,4
 )
 , delivery_base_mthly_region_nomo as (
-select  'Reported '+date_trunc('month',delivery_week)::date::varchar AS type,
+select  'Reported '+date_trunc('month',delivery_date)::date::varchar AS type,
         sales_region_id,
         sum(total_delivery_cost)+sum(weee_linehaul_cost) AS delivery_cost
 from    metrics.dispatch_performance dp
-where   date_trunc('month',delivery_week)::date = dateadd('month', -1,date_trunc('month', current_date))
+where   date_trunc('month',delivery_date)::date = dateadd('month', -1,date_trunc('month', current_date))
 and     delivery_plan_type = 'grocery'
 group by 1,2
 )
@@ -495,7 +496,7 @@ select  'Reported '+delivery_month::varchar AS type,
         3 as sales_region_id,
         sum(total_delivery_cost) as delivery_cost
         from (
-            select date_trunc('month',dateadd('day', -date_part(dow, deal_delivery_date::date)::int, deal_delivery_date::date)::date)::date as delivery_month
+            select date(date_trunc('month',deal_delivery_date::date)) as delivery_month
             , wms_order_id
             , max(rate) as total_delivery_cost
             from metrics.mail_order_shipment
@@ -509,7 +510,7 @@ group by 1,2
 )
 , sales_base_mthly_groc as (
 SELECT
-  'Reported '+date_trunc('month',dateadd('day', -date_part(dow, delivery_day::date)::int, delivery_day::date))::date::varchar as type,
+  'Reported '+date_trunc('month',delivery_day)::date::varchar as type,
   sales_region_id,
   'Company Total' as sales_region_title,
   0.023 AS weeebates_pct,
@@ -544,15 +545,15 @@ SELECT
   '' as placeholder
 from groc_base pl
 left join (select * from region_pl where region_id = 999) rpl on pl.sales_region_id = rpl.region_id
-where date_trunc('month',dateadd('day', -date_part(dow, delivery_day::date)::int, delivery_day::date))::date = dateadd('month', -1, date_trunc('month', current_date))::date
+where date_trunc('month',delivery_day)::date = dateadd('month', -1, date_trunc('month', current_date))::date
 group by 1,2,3,4
 )
 , delivery_base_mthly_groc_nomo as (
-select  'Reported '+date_trunc('month',delivery_week)::date::varchar AS type,
+select  'Reported '+date_trunc('month',delivery_date)::date::varchar AS type,
         999 as sales_region_id,
         sum(total_delivery_cost)+sum(weee_linehaul_cost) AS delivery_cost
 from    metrics.dispatch_performance dp
-where   date_trunc('month',delivery_week)::date = dateadd('month', -1,date_trunc('month', current_date))
+where   date_trunc('month',delivery_date)::date = dateadd('month', -1,date_trunc('month', current_date))
 and     delivery_plan_type = 'grocery'
 group by 1,2
 )
@@ -561,7 +562,7 @@ select  'Reported '+delivery_month::varchar AS type,
         999 as sales_region_id,
         sum(total_delivery_cost) as delivery_cost
         from (
-            select date_trunc('month',dateadd('day', -date_part(dow, deal_delivery_date::date)::int, deal_delivery_date::date)::date)::date as delivery_month
+            select date(date_trunc('month',deal_delivery_date::date)) as delivery_month
             , wms_order_id
             , max(rate) as total_delivery_cost
             from metrics.mail_order_shipment
@@ -571,7 +572,7 @@ select  'Reported '+delivery_month::varchar AS type,
 group by 1,2
 )
 , delivery_base_mthly_groc as (
-    select * from delivery_base_mthly_groc_nomo union all select * from delivery_base_mthly_groc_mo
+    select type, sales_region_id, sum(delivery_cost) as delivery_cost from (select * from delivery_base_mthly_groc_nomo union all select * from delivery_base_mthly_groc_mo) group by 1,2
 )
 , pl_mthly_region as (
     select sb.type
@@ -697,8 +698,67 @@ group by 1,2
     , case when type::date = dateadd('week', -1,date_trunc('week', current_date)-1)::date then lag(delivery_pct) over (partition by sales_region_id order by type::date ) else delivery_pct end as delivery_pct
 from tbl
 order by 2,type::date)
-select * from t1
+, final_tbl as 
+(select * from t1
 union all select * from pl_mthly_region
-union all select * from pl_mthly_groc;
-
+union all select * from pl_mthly_groc)
+,lcs as
+(select entry_date,
+case when  warehouse = 'FL - Tampa' then 23
+    when  warehouse = 'TX - Houston' then 10
+    when warehouse = 'IL - Chicago' then 15
+    when warehouse in  ('LA - La Mirada','LA - Greater') then 2
+    when warehouse = 'NJ - Edison' then 7 end as sales_region_id ,
+    sum(labor_cost) / nullif(sum(total_working_hours), 0)::float as hourly_rate
+from metrics.adp_labor_cost_summary lcs
+    where dateadd('day', -date_part(dow, entry_date::date)::int, entry_date::date)::date
+    between date(dateadd('week', -4,date(date_trunc('week', current_date)-1)))
+    and date(dateadd('week', -1,date_trunc('week', current_date)-1))
+    and warehouse not in ('SF - Union City', 'WA - Seattle')
+group by 1,2)
+, dws as (
+select date(operation_date) as operation_day,
+    case when inventory_title = 'FL - Tampa' then 23
+    when inventory_title = 'TX - Houston' then 10
+    when inventory_title = 'IL - Chicago' then 15
+    when inventory_title in  ('LA - La Mirada','LA - Greater') then 2
+    when inventory_title in('NJ - Edison','NJ - New York') then 7 end as sales_region_id ,
+    sum(work_time) / 3600                                                   as total_hours
+from  dws.wms_summary_detail dws
+    where dateadd('day', -date_part(dow, operation_date::date)::int, operation_date::date)::date
+    between date(dateadd('week', -4,date(date_trunc('week', current_date)-1)))
+    and date(dateadd('week', -1,date_trunc('week', current_date)-1))
+    and lower(operation_type) like '%repack%'
+    and lower(split_part(inventory_title,'-',1)) not like '%sf%'
+    and lower(split_part(inventory_title,'-',1)) not like '%wa%'
+group by 1,2
+)
+, rlc_a as
+(select dateadd('day', -date_part(dow, operation_day::date)::int, operation_day::date)::date as delivery_week
+    , dws.sales_region_id
+    , sum(total_hours * lcs.hourly_rate) as repack_labor_cost
+from dws
+left join lcs on lcs.entry_date = dws.operation_day and lcs.sales_region_id = dws.sales_region_id
+group by 1,2 )
+, rlc_b as (
+select dateadd('day', -date_part(dow, entry_date::date)::int, entry_date::date)::date as delivery_week,
+    case when lower(warehouse) like '%sf%' THEN 1
+    when lower(split_part(warehouse,'-',1))  like '%wa%' then 4 end as sales_region_id ,
+    sum(labor_cost) as repack_labor_cost
+from metrics.adp_labor_cost_detail
+    where dateadd('day', -date_part(dow, entry_date::date)::int, entry_date::date)::date
+    between date(dateadd('week', -4,date(date_trunc('week', current_date)-1)))
+    and date(dateadd('week', -1,date_trunc('week', current_date)-1))
+    and filter_flag = 'N'
+    and department in ('OP5102', 'OP7499')
+    and (lower(warehouse) like '%wa%' or lower(warehouse) like '%sf%')
+    group by 1, 2
+)
+, rlc as (
+    select * from rlc_a union all select * from rlc_b
+)
+select ft.* 
+    , nvl(rlc.repack_labor_cost,0) as repack_labor_cost
+from final_tbl ft 
+left join rlc on ft.type = rlc.delivery_week::varchar and ft.sales_region_id = rlc.sales_region_id;
 
