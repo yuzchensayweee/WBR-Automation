@@ -33,6 +33,7 @@ with region_base as (
         , sales_region_id_new as sales_region_id
         , sum(daily_new_users_flag) as new_user
         , sum(sub_total) as gross_rev
+        , sum(refund) as refund
         , sum(oos)+sum(refund) as oos_rev
         , sum(coupon) as coupon_rev
         , sum(coupon) - sum(new_user_coupon) as discount
@@ -158,8 +159,7 @@ SELECT
   coupon_pct+0.023 AS discount_pct,
   sum(oos) as oos_rev,
   oos_rev/gross_rev as oos_pct,
---   sum(refund) as refund_rev,
-  case when type::date = dateadd('week', -1,date_trunc('week',current_date)-1) then oos_rev/0.88 else sum(refund) end as refund_rev,
+  case when type::date = dateadd('week', -1,date_trunc('week',current_date)-1) then sum(refund)/0.88 else sum(refund) end as refund_rev,
   refund_rev/gross_rev as refund_pct,
   oos_pct+refund_pct as oos_refund_pct,
   -- gross_rev - oos_rev - refund_rev - coupon_rev - gross_rev * max(weeebates_pct) as net_rev,
@@ -241,7 +241,7 @@ SELECT
   sum(oos) as oos_rev,
   oos_rev/gross_rev as oos_pct,
 --   sum(refund) as refund_rev,
-  case when type::date = dateadd('week', -1,date_trunc('week',current_date)-1) then oos_rev/0.88 else sum(refund) end as refund_rev,
+  case when type::date = dateadd('week', -1,date_trunc('week',current_date)-1) then sum(refund)/0.88 else sum(refund) end as refund_rev,
   refund_rev/gross_rev as refund_pct,
   oos_pct+refund_pct as oos_refund_pct,
   -- gross_rev - oos_rev - refund_rev - coupon_rev - gross_rev * max(weeebates_pct) as net_rev,
@@ -698,7 +698,7 @@ group by 1,2
     , case when type::date = dateadd('week', -1,date_trunc('week', current_date)-1)::date then lag(delivery_pct) over (partition by sales_region_id order by type::date ) else delivery_pct end as delivery_pct
 from tbl
 order by 2,type::date)
-, final_tbl as 
+, final_tbl as
 (select * from t1
 union all select * from pl_mthly_region
 union all select * from pl_mthly_groc)
@@ -757,8 +757,8 @@ from metrics.adp_labor_cost_detail
 , rlc as (
     select * from rlc_a union all select * from rlc_b
 )
-select ft.* 
+select ft.*
     , nvl(rlc.repack_labor_cost,0) as repack_labor_cost
-from final_tbl ft 
+from final_tbl ft
 left join rlc on ft.type = rlc.delivery_week::varchar and ft.sales_region_id = rlc.sales_region_id;
 
