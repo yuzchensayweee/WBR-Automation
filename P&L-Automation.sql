@@ -21,7 +21,7 @@ with region_base as (
         (partition by date_trunc('month', dateadd('day', -date_part(dow, delivery_day::date)::int, delivery_day::date)::date) order by dateadd('day', -date_part(dow, delivery_day::date)::int, delivery_day::date)::date desc) as rk
         ,'' as place_holder
     from metrics.order_product
-    where (delivery_month = dateadd('month', -1, date_trunc('month', current_date))::date
+    where (date_trunc('month',delivery_week)::date = dateadd('month', -1, date_trunc('month', current_date))::date
     or delivery_week between date(dateadd('week', -4,date(date_trunc('week', current_date)-1))) AND date(dateadd('week', -1,date_trunc('week', current_date)-1)))
     and order_biz_type in ('grocery','alcohol')
     group by 1,2,3,4,5,6
@@ -62,7 +62,7 @@ with region_base as (
         over
         (partition by date_trunc('month', dateadd('day', -date_part(dow, delivery_day::date)::int, delivery_day::date)::date) order by dateadd('day', -date_part(dow, delivery_day::date)::int, delivery_day::date)::date desc) as rk
     from metrics.order_product
-    where (delivery_month = dateadd('month', -1, date_trunc('month', current_date))::date
+    where (date_trunc('month',delivery_week)::date = dateadd('month', -1, date_trunc('month', current_date))::date
     or delivery_week between date(dateadd('week', -4,date(date_trunc('week', current_date)-1))) AND date(dateadd('week', -1,date_trunc('week', current_date)-1)))
     and order_biz_type in ('grocery','alcohol')
     group by 1,2,3,4,5
