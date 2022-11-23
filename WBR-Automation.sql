@@ -678,9 +678,6 @@ and b1.ethnicity_user = 'Chinese'
 left join base15 b15
 on b1.delivery_unit_b1 = b15.delivery_unit_b15
 and b1.ethnicity_user = 'Chinese'
-left join base16 b16 
-on b1.delivery_unit_b1 = b16.delivery_unit_b16 
-and b1.ethnicity_user = 'Chinese'
 )
 select delivery_unit_b1::date as delivery_week, * from base_all
 union all
