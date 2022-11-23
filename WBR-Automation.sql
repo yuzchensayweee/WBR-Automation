@@ -598,21 +598,20 @@ group by 1
                when {{WMQ}} = 'month'   then date_trunc('month', pos.date)::date
                when {{WMQ}} = 'quarter' then date_trunc('quarter', pos.date)::date
                else null end  as delivery_unit_b14,
-               avg(case when storage_type = 'N' and lower(pos.title) like '%houston%'  then max_sku_count end) as dry_cap_tx,
-               avg(case when storage_type = 'F' and lower(pos.title) like '%houston%' then max_sku_count end) as frozen_cap_tx,
-               avg(case when storage_type = 'R' and lower(pos.title) like '%houston%' then max_sku_count end) as ref_cap_tx,
-               avg(case when storage_type = 'N' and lower(pos.title) like '%chicago%'  then max_sku_count end) as dry_cap_chi,
-               avg(case when storage_type = 'F' and lower(pos.title) like '%chicago%' then max_sku_count end) as frozen_cap_chi,
-               avg(case when storage_type = 'R' and lower(pos.title) like '%chicago%' then max_sku_count end) as ref_cap_chi,
-               avg(case when storage_type = 'N' and lower(pos.title) like '%tampa%' then max_sku_count end) as dry_cap_fl,
-               avg(case when storage_type = 'F' and lower(pos.title) like '%tampa%' then max_sku_count end) as frozen_cap_fl,
-               avg(case when storage_type = 'R' and lower(pos.title) like '%tampa%' then max_sku_count end) as ref_cap_fl
+               avg(case when storage_type = 'N' and split_part(pos.title, '_', 3) = '' and lower(pos.title) like '%houston%'  then max_sku_count end) as dry_cap_tx,
+               avg(case when storage_type = 'F' and split_part(pos.title, '_', 3) = '' and lower(pos.title) like '%houston%' then max_sku_count end) as frozen_cap_tx,
+               avg(case when storage_type = 'R' and split_part(pos.title, '_', 3) = '' and lower(pos.title) like '%houston%' then max_sku_count end) as ref_cap_tx,
+               avg(case when storage_type = 'N' and split_part(pos.title, '_', 3) = '' and lower(pos.title) like '%chicago%'  then max_sku_count end) as dry_cap_chi,
+               avg(case when storage_type = 'F' and split_part(pos.title, '_', 3) = '' and lower(pos.title) like '%chicago%' then max_sku_count end) as frozen_cap_chi,
+               avg(case when storage_type = 'R' and split_part(pos.title, '_', 3) = '' and lower(pos.title) like '%chicago%' then max_sku_count end) as ref_cap_chi,
+               avg(case when storage_type = 'N' and split_part(pos.title, '_', 3) = '' and lower(pos.title) like '%tampa%' then max_sku_count end) as dry_cap_fl,
+               avg(case when storage_type = 'F' and split_part(pos.title, '_', 3) = '' and lower(pos.title) like '%tampa%' then max_sku_count end) as frozen_cap_fl,
+               avg(case when storage_type = 'R' and split_part(pos.title, '_', 3) = '' and lower(pos.title) like '%tampa%' then max_sku_count end) as ref_cap_fl
           from metrics.po_sku_params_snapshot pos
           where  ((delivery_unit_b14 between dateadd({{WMQ}} ,-14, date_trunc({{WMQ}},current_date)::date-{{WMQ1}}) and dateadd({{WMQ}} ,-1, date_trunc({{WMQ}},current_date)::date-{{WMQ1}}) or
           delivery_unit_b14 = date_trunc('week', current_date)::date-1 - 7*53)
           and (pos.date >= dateadd({{WMQ}} ,-14, date_trunc({{WMQ}},current_date)::date-{{WMQ1}}) - 20 or pos.date >= date_trunc('week', current_date)::date-1 - 7*55))
-           and ethnicity = '-'
-           and (is_food = '-' and is_protein = '-' and is_produce = '-')
+          and (is_food = '-' and is_protein = '-' and is_produce = '-' and ethnicity = '-')
           group by 1 
 )
 , base15 as (
@@ -620,15 +619,15 @@ group by 1
                when {{WMQ}} = 'month'   then date_trunc('month', order_day)::date
                when {{WMQ}} = 'quarter' then date_trunc('quarter', order_day)::date
                else null end  as delivery_unit_b15,
-               count(distinct case when storage_type = 'N' and lower(sales_region_title) like '%houston%' then product_id end) as dry_instock_tx,
-               count(distinct case when storage_type = 'F' and lower(sales_region_title) like '%houston%' then product_id end) as frozen_instock_tx,
-               count(distinct case when storage_type = 'R' and lower(sales_region_title) like '%houston%' then product_id end) as ref_instock_tx,
-               count(distinct case when storage_type = 'N' and lower(sales_region_title) like '%chicago%' then product_id end) as dry_instock_chi,
-               count(distinct case when storage_type = 'F' and lower(sales_region_title) like '%chicago%' then product_id end) as frozen_instock_chi,
-               count(distinct case when storage_type = 'R' and lower(sales_region_title) like '%chicago%' then product_id end) as ref_instock_chi,
-               count(distinct case when storage_type = 'N' and lower(sales_region_title) like '%tampa%' then product_id end) as dry_instock_fl,
-               count(distinct case when storage_type = 'F' and lower(sales_region_title) like '%tampa%' then product_id end) as frozen_instock_fl,
-               count(distinct case when storage_type = 'R' and lower(sales_region_title) like '%tampa%' then product_id end) as ref_instock_fl
+               count(distinct case when storage_type = 'N' and lower(sales_region_title) like '%houston%' and split_part(department,'-',1) in ('05','09','11', '10','06','07', '15','14', '20','17', '16','12') then product_id end) as dry_instock_tx, -- dry grocery and gm & hbc
+               count(distinct case when storage_type = 'F' and lower(sales_region_title) like '%houston%' and split_part(department,'-',1) = '08' then product_id end) as frozen_instock_tx, -- frozen only 
+               count(distinct case when storage_type = 'R' and lower(sales_region_title) like '%houston%' and split_part(department,'-',1) = '13' then product_id end) as ref_instock_tx, -- dairy/deli
+               count(distinct case when storage_type = 'N' and lower(sales_region_title) like '%chicago%' and split_part(department,'-',1) in ('05','09','11', '10','06','07', '15','14', '20','17', '16','12') then product_id end) as dry_instock_chi,
+               count(distinct case when storage_type = 'F' and lower(sales_region_title) like '%chicago%' and split_part(department,'-',1) = '08' then product_id end) as frozen_instock_chi,
+               count(distinct case when storage_type = 'R' and lower(sales_region_title) like '%chicago%' and split_part(department,'-',1) = '13' then product_id end) as ref_instock_chi,
+               count(distinct case when storage_type = 'N' and lower(sales_region_title) like '%tampa%' and split_part(department,'-',1) in ('05','09','11', '10','06','07', '15','14', '20','17', '16','12') then product_id end) as dry_instock_fl,
+               count(distinct case when storage_type = 'F' and lower(sales_region_title) like '%tampa%' and split_part(department,'-',1) = '08' then product_id end) as frozen_instock_fl,
+               count(distinct case when storage_type = 'R' and lower(sales_region_title) like '%tampa%' and split_part(department,'-',1) = '13' then product_id end) as ref_instock_fl
      from metrics.in_stock_rate_data_source
     where  ((delivery_unit_b15 between dateadd({{WMQ}} ,-14, date_trunc({{WMQ}},current_date)::date-{{WMQ1}}) and dateadd({{WMQ}} ,-1, date_trunc({{WMQ}},current_date)::date-{{WMQ1}}) or
           delivery_unit_b15 = date_trunc('week', current_date)::date-1 - 7*53)
@@ -636,22 +635,6 @@ group by 1
           )
     and sku_region_status = 'A' and sku_availability = 1 
     group by 1
-)
-, base16 as (
-     select case when {{WMQ}} = 'week'    then date_trunc('week',   opcd.delivery_day+1)::date-1
-               when {{WMQ}} = 'month'   then date_trunc('month', opcd.delivery_day)::date
-               when {{WMQ}} = 'quarter' then date_trunc('quarter', opcd.delivery_day)::date
-               else null end  as delivery_unit_b16,
-               count(distinct opcd.group_invoice_id) as delivery_case_w_bnn,
-               count(distinct case when case_parent_category_np = 'Quality' OR case_parent_category_p = 'Quality' then opcd.group_invoice_id end) as quality_delivery_cse_w_bnn,
-               count(distinct case when case_parent_category_np = 'Quality' OR case_parent_category_p = 'Quality' then opcd.order_id end) as return_quantity_bnn
-     from metrics.order_product_case_details opcd
-     left join weee_p01.gb_product gbp on opcd.product_id = gbp.id 
-      where  ((delivery_unit_b16 between dateadd({{WMQ}} ,-14, date_trunc({{WMQ}},current_date)::date-{{WMQ1}}) and dateadd({{WMQ}} ,-1, date_trunc({{WMQ}},current_date)::date-{{WMQ1}}) or
-        delivery_unit_b16 = date_trunc('week', current_date)::date-1 - 7*53)
-and    (opcd.order_day >= dateadd({{WMQ}} ,-14, date_trunc({{WMQ}},current_date)::date-{{WMQ1}}) - 20 or opcd.order_day >= date_trunc('week', current_date)::date-1 - 7*55))
-and lower(gbp.short_title_en) like '%banana%'
-group by 1 
 )
 , base_all as (
 select *
